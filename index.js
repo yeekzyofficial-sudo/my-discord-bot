@@ -18,47 +18,70 @@ client.commands = new Collection();
 const slashCommands = [];
 
 const token = process.env.DISCORD_TOKEN;
-const clientId = process.env.CLIENT_ID; // Set in Render
-const guildId = process.env.GUILD_ID;   // Optional: for testing slash commands per guild
+const clientId = process.env.CLIENT_ID;
+const guildId = process.env.GUILD_ID; // optional
 
-// Load all cogs
+// Safe cog loader
 function loadCommands(dir) {
+    if (!fs.existsSync(dir)) {
+        console.warn(`Commands folder not found: ${dir}`);
+        return;
+    }
+
     const files = fs.readdirSync(dir, { withFileTypes: true });
     for (const file of files) {
         const fullPath = path.join(dir, file.name);
 
-        if (file.isDirectory()) {
-            loadCommands(fullPath);
-        } else if (file.name.endsWith('.js')) {
-            const exported = require(fullPath);
-            if (Array.isArray(exported)) {
-                for (const cmd of exported) {
-                    client.commands.set(cmd.name, cmd);
-                    if (cmd.slashData) slashCommands.push(cmd.slashData.toJSON());
+        try {
+            if (file.isDirectory()) {
+                loadCommands(fullPath);
+            } else if (file.name.endsWith('.js')) {
+                const exported = require(fullPath);
+
+                if (Array.isArray(exported)) {
+                    exported.forEach(cmd => {
+                        if (!cmd.name) {
+                            console.warn(`Command in ${file.name} has no name, skipping.`);
+                            return;
+                        }
+                        client.commands.set(cmd.name, cmd);
+                        if (cmd.slashData) slashCommands.push(cmd.slashData.toJSON());
+                        console.log(`Loaded command: ${cmd.name}`);
+                    });
+                } else {
+                    if (!exported.name) {
+                        console.warn(`Command in ${file.name} has no name, skipping.`);
+                        continue;
+                    }
+                    client.commands.set(exported.name, exported);
+                    if (exported.slashData) slashCommands.push(exported.slashData.toJSON());
+                    console.log(`Loaded command: ${exported.name}`);
                 }
-            } else {
-                client.commands.set(exported.name, exported);
-                if (exported.slashData) slashCommands.push(exported.slashData.toJSON());
             }
+        } catch (err) {
+            console.error(`Failed to load command file ${file.name}:`, err);
         }
     }
 }
 
-// Load all commands
-loadCommands('./commands');
+// Load commands safely
+loadCommands(path.join(__dirname, 'commands'));
 
 // Register slash commands
-const rest = new REST({ version: '10' }).setToken(token);
 (async () => {
+    if (slashCommands.length === 0) return;
+
+    const rest = new REST({ version: '10' }).setToken(token);
     try {
         console.log('Registering slash commands...');
-        await rest.put(
-            Routes.applicationGuildCommands(clientId, guildId),
-            { body: slashCommands }
-        );
+        if (guildId) {
+            await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: slashCommands });
+        } else {
+            await rest.put(Routes.applicationCommands(clientId), { body: slashCommands });
+        }
         console.log('Slash commands registered!');
     } catch (err) {
-        console.error(err);
+        console.error('Error registering slash commands:', err);
     }
 })();
 
@@ -67,7 +90,7 @@ client.once('ready', () => {
     console.log(`Logged in as ${client.user.tag}`);
 });
 
-// Message (prefix) handler
+// Prefix command handler
 client.on('messageCreate', async message => {
     if (message.author.bot) return;
     if (!message.content.startsWith(PREFIX)) return;
@@ -81,7 +104,7 @@ client.on('messageCreate', async message => {
     try {
         await command.prefixExecute(message, args);
     } catch (err) {
-        console.error(err);
+        console.error(`Error executing prefix command ${commandName}:`, err);
         message.reply('There was an error executing that command.');
     }
 });
@@ -96,7 +119,7 @@ client.on('interactionCreate', async interaction => {
     try {
         await command.slashExecute(interaction);
     } catch (err) {
-        console.error(err);
+        console.error(`Error executing slash command ${interaction.commandName}:`, err);
         interaction.reply({ content: 'There was an error executing that command.', ephemeral: true });
     }
 });
