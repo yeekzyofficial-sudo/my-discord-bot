@@ -1,9 +1,18 @@
 const fs = require('fs');
 const path = require('path');
+const express = require('express');
 const { Client, GatewayIntentBits, Partials, Collection } = require('discord.js');
 const { REST } = require('@discordjs/rest');
 const { Routes } = require('discord-api-types/v10');
 
+// ---------- EXPRESS SERVER ----------
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get('/', (req, res) => res.send('Bot is running!'));
+app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
+
+// ---------- DISCORD BOT ----------
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -21,7 +30,7 @@ const token = process.env.DISCORD_TOKEN;
 const clientId = process.env.CLIENT_ID;
 const guildId = process.env.GUILD_ID; // optional
 
-// Safe cog loader
+// ---------- SAFE COG LOADER ----------
 function loadCommands(dir) {
     if (!fs.existsSync(dir)) {
         console.warn(`Commands folder not found: ${dir}`);
@@ -64,10 +73,9 @@ function loadCommands(dir) {
     }
 }
 
-// Load commands safely
 loadCommands(path.join(__dirname, 'commands'));
 
-// Register slash commands
+// ---------- REGISTER SLASH COMMANDS ----------
 (async () => {
     if (slashCommands.length === 0) return;
 
@@ -85,12 +93,12 @@ loadCommands(path.join(__dirname, 'commands'));
     }
 })();
 
-// Ready event
+// ---------- READY EVENT ----------
 client.once('ready', () => {
     console.log(`Logged in as ${client.user.tag}`);
 });
 
-// Prefix command handler
+// ---------- PREFIX HANDLER ----------
 client.on('messageCreate', async message => {
     if (message.author.bot) return;
     if (!message.content.startsWith(PREFIX)) return;
@@ -109,7 +117,7 @@ client.on('messageCreate', async message => {
     }
 });
 
-// Slash command handler
+// ---------- SLASH HANDLER ----------
 client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
